@@ -69,6 +69,56 @@ use Data::Dumper;
 $Data::Dumper::Maxdepth=3;
 
 
+=head2 compare_dnafrags
+
+  Arg[1]      : Bio::EnsEMBL::Compara::DBSQL::DBAdaptor $compara_dba
+  Arg[2]      : Bio::EnsEMBL::Compara::GenomeDB $genome_db
+  Arg[3]      : Bio::EnsEMBL::DBSQL::DBAdaptor $species_dba
+  Arg[4]      : (optional) Boolean $only_reference
+  Description : This method fetches all the dnafrag in the compara DB
+                corresponding to the $genome_db. It also gets the list
+                of top_level seq_regions from the species core DB and
+                compares them.
+                If $only_reference is set, the method will only consider
+                the reference dnafrags / slices.
+  Returns     : Number of new, missing or different DnaFrags
+  Exceptions  : -none-
+
+=cut
+
+sub compare_dnafrags {
+    my ($compara_dba, $genome_db, $species_dba, $only_reference) = @_;
+
+    $species_dba //= $genome_db->db_adaptor;
+    my $dnafrag_adaptor = $compara_dba->get_adaptor('DnaFrag');
+    my $old_dnafrags = $dnafrag_adaptor->fetch_all_by_GenomeDB($genome_db);
+    my $old_dnafrags_by_name;
+    foreach my $old_dnafrag (@$old_dnafrags) {
+        next if $only_reference && !$old_dnafrag->is_reference;
+        $old_dnafrags_by_name->{$old_dnafrag->name} = $old_dnafrag;
+    }
+
+    my $gdb_slices = $genome_db->genome_component
+        ? $species_dba->get_SliceAdaptor->fetch_all_by_genome_component($genome_db->genome_component)
+        : $species_dba->get_SliceAdaptor->fetch_all('toplevel', undef, 1, 1, 1);
+    die 'Could not fetch any toplevel slices from '.$genome_db->name() unless(scalar(@$gdb_slices));
+
+    my $new_dnafrags = 0;
+    my $different_dnafrags = 0;
+    foreach my $slice (@$gdb_slices) {
+        next if $only_reference && !$slice->is_reference;
+        if (my $old_df = delete $old_dnafrags_by_name->{$slice->seq_region_name}) {
+            my $new_dnafrag = Bio::EnsEMBL::Compara::DnaFrag->new_from_Slice($slice, $genome_db);
+            $different_dnafrags++ if $old_df->_check_equals($new_dnafrag);
+        } else {
+            $new_dnafrags++;
+        }
+    }
+
+    return ($new_dnafrags + $different_dnafrags + scalar(keys %$old_dnafrags_by_name));
+}
+
+
 =head2 update_dnafrags
 
   Arg[1]      : Bio::EnsEMBL::Compara::DBSQL::DBAdaptor $compara_dba
