@@ -74,23 +74,27 @@ $Data::Dumper::Maxdepth=3;
   Arg[1]      : Bio::EnsEMBL::Compara::DBSQL::DBAdaptor $compara_dba
   Arg[2]      : Bio::EnsEMBL::Compara::GenomeDB $genome_db
   Arg[3]      : Bio::EnsEMBL::DBSQL::DBAdaptor $species_dba
+  Arg[4]      : (optional) Boolean $only_non_reference
   Description : This method fetches all the dnafrag in the compara DB
                 corresponding to the $genome_db. It also gets the list
                 of top_level seq_regions from the species core DB and
                 updates the list of dnafrags in the compara DB.
+                If $only_non_reference is set, the method will only
+                consider the non-refrence dnafrags / slices.
   Returns     : Number of new DnaFrags
   Exceptions  : -none-
 
 =cut
 
 sub update_dnafrags {
-    my ($compara_dba, $genome_db, $species_dba) = @_;
+    my ($compara_dba, $genome_db, $species_dba, $only_non_reference) = @_;
 
     $species_dba //= $genome_db->db_adaptor;
     my $dnafrag_adaptor = $compara_dba->get_adaptor('DnaFrag');
     my $old_dnafrags = $dnafrag_adaptor->fetch_all_by_GenomeDB($genome_db);
     my $old_dnafrags_by_name;
     foreach my $old_dnafrag (@$old_dnafrags) {
+        next if $only_non_reference && $old_dnafrag->is_reference;
         $old_dnafrags_by_name->{$old_dnafrag->name} = $old_dnafrag;
     }
 
@@ -103,6 +107,7 @@ sub update_dnafrags {
     my $existing_dnafrags_ids = 0;
     my @species_overall_len;#rule_2
     foreach my $slice (@$gdb_slices) {
+        next if $only_non_reference && $slice->is_reference;
 
         my $new_dnafrag = Bio::EnsEMBL::Compara::DnaFrag->new_from_Slice($slice, $genome_db);
 
