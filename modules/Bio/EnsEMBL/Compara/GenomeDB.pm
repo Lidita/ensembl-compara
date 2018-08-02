@@ -76,7 +76,10 @@ use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 
 use Bio::EnsEMBL::Compara::Utils::CoreDBAdaptor;
 
-use base ('Bio::EnsEMBL::Compara::StorableWithReleaseHistory');        # inherit dbID(), adaptor() and new() methods, and first_release() and last_release()
+use base (
+    'Bio::EnsEMBL::Compara::StorableWithReleaseHistory',        # inherit dbID(), adaptor() and new() methods, and first_release() and last_release()
+    'Bio::EnsEMBL::Compara::Comparable',                        # get _check_equals() and _assert_equals()
+);
 
 
 =head2 new
@@ -214,44 +217,18 @@ sub db_adaptor {
 }
 
 
-=head2 _check_equals
+=head2 _comparable_fields
 
-  Example     : $genome_db->_check_equals($ref_genome_db);
-  Description : Check that all the fields are the same as in the other object
-                This is used to compare the fields automatically populated from
-                the core database with the GenomeDB object preent in the Compara
-                master database
-  Returntype  : String: all the differences found between the two genome_dbs
+  Example     : $genome_db->_comparable_fields();
+  Description : Return the list of all the fields that should be considered by L<_check_equals>
+  Returntype  : List of field names
   Exceptions  : none
 
 =cut
 
-sub _check_equals {
-    my ($self, $ref_genome_db) = @_;
-
-    my $diffs = '';
-    foreach my $field (qw(assembly taxon_id genebuild name strain_name display_name has_karyotype)) {
-        if (($self->$field() xor $ref_genome_db->$field()) or ($self->$field() and $ref_genome_db->$field() and ($self->$field() ne $ref_genome_db->$field()))) {
-            $diffs .= sprintf("%s differs between this GenomeDB (%s) and the reference one (%s)\n", $field, $self->$field() // '<NULL>', $ref_genome_db->$field() // '<NULL>');
-        }
-    }
-    return $diffs;
-}
-
-
-=head2 _assert_equals
-
-  Example     : $genome_db->_assert_equals($ref_genome_db);
-  Description : Wrapper around _check_equals() that will throw if the GenomeDBs are different
-  Returntype  : none
-  Exceptions  : Throws if there are discrepancies
-
-=cut
-
-sub _assert_equals {
+sub _comparable_fields {
     my $self = shift;
-    my $diffs = $self->_check_equals(@_);
-    throw($diffs) if $diffs;
+    return qw(assembly taxon_id genebuild name strain_name display_name has_karyotype);
 }
 
 

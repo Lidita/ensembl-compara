@@ -118,7 +118,11 @@ use Bio::EnsEMBL::Utils::Exception qw(deprecate throw);
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 
-use base ('Bio::EnsEMBL::Storable');        # inherit dbID(), adaptor() and new() methods
+
+use base (
+    'Bio::EnsEMBL::Storable',               # inherit dbID(), adaptor() and new() methods
+    'Bio::EnsEMBL::Compara::Comparable',    # get _check_equals() and _assert_equals()
+);
 
 
 =head2 new
@@ -468,6 +472,21 @@ sub codon_table_id {
     my $self = shift;
     $self->{'_codon_table_id'} = shift if @_;
     return $self->{'_codon_table_id'};
+}
+
+
+=head2 _comparable_fields
+
+  Example     : $genome_db->_comparable_fields();
+  Description : Return the list of all the fields that should be considered by L<_check_equals>
+  Returntype  : List of field names
+  Exceptions  : none
+
+=cut
+
+sub _comparable_fields {
+    my $self = shift;
+    return qw(length coord_system_name cellular_component is_reference codon_table_id);
 }
 
 
