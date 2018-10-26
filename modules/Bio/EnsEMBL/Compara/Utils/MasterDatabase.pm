@@ -458,6 +458,77 @@ sub _prev_genome_db {
 }
 
 
+sub safe_update_one_genome_db {
+    my ($compara_dba, $genome_db, $species_dba, @args) = @_;
+
+    my ($release, $genome_component, $allow_new_non_reference_dnafrags)
+        = rearrange([qw(RELEASE GENOME_COMPONENT ALLOW_NEW_NON_REFERENCE_DNAFRAGS)], @args);
+
+    my ($is_new_genome_db, $has_new_dnafrags);
+
+    if ($genome_db) {
+        $genome_db = $genome_db->component_genome_dbs($genome_component) if $genome_component;
+
+        my $proper_genome_db = Bio::EnsEMBL::Compara::GenomeDB->new_from_DBAdaptor($species_dba);
+
+        my $diff_genome_db = $proper_genome_db->_check_equals($genome_db);
+        if ($diff_genome_db) {
+            $proper_genome_db->first_release($genome_db->first_release);
+            $proper_genome_db->adaptor($genome_db->adaptor);
+            print 'Fixing genome_db '.$genome_db->toString;
+            $proper_genome_db->dbID($genome_db->dbID);
+            $genome_db->adaptor->update($proper_genome_db);
+            $genome_db = $proper_genome_db;
+            print 'Updated genome_db is '.$genome_db->toString;
+        }
+
+        if ($allow_new_non_reference_dnafrags) {
+
+            # Check that the reference DnaFrags are identical
+            my $diff_dnafrags = compare_dnafrags($compara_dba, $genome_db, $species_dba, 'only_reference');
+            throw($diff_dnafrags.' missing/extra/different for the genome '.$genome_db->name) if $diff_dnafrags;
+
+            # Load the new non-reference DnaFrags
+            my $new_dnafrags = update_dnafrags($compara_dba, $genome_db, $species_dba, 'only_non_reference');
+
+            # Register the changes
+            $has_new_dnafrags = 1;
+
+        } else {
+
+            # Check that the DnaFrags are identical
+            my $diff_dnafrags = compare_dnafrags($compara_dba, $genome_db, $species_dba);
+            throw($diff_dnafrags.' missing/extra/different for the genome '.$genome_db->name) if $diff_dnafrags;
+
+        }
+    } else {
+
+        # Build a new GenomeDB
+        $genome_db = Bio::EnsEMBL::Compara::GenomeDB->new_from_DBAdaptor($species_dba);
+
+        # Basic safety checks
+        unless (defined($genome_db->name)) {
+            throw("Cannot find species.production_name in meta table for ".($species_dba->locator));
+        }
+        unless (defined($genome_db->taxon_id)) {
+            throw("Cannot find species.taxonomy_id in meta table for ".($species_dba->locator));
+        }
+
+        # Store in the database
+        $compara_dba->get_GenomeDBAdaptor->store($genome_db);
+        print 'Stored '.$genome_db->toString;
+        my $new_dnafrags = update_dnafrags($compara_dba, $genome_db, $species_dba);
+        print "Found $new_dnafrags DnaFrags in " . $species_dba->dbc->host . "/" . $species_dba->dbc->dbname;
+
+        $is_new_genome_db = 1;
+    }
+
+    $genome_db->adaptor->make_object_current($genome_db) if $release;
+
+    return ($genome_db, $is_new_genome_db, $has_new_dnafrags);
+}
+
+
 ############################################################
 #                edit_collection.pl methods                #
 ############################################################
