@@ -69,13 +69,11 @@ sub default_options {
     return {
         %{$self->SUPER::default_options},   # inherit the generic ones
 
-        'email'                     => $self->o('ENV', 'USER').'@ebi.ac.uk',
+        #'email'                     => $self->o('ENV', 'USER').'@ebi.ac.uk',
         'host'                      => 'mysql-ens-compara-prod-4:4401',
-        'master_db_ro'              => 'mysql://ensro\@mysql-ens-compara-prod-4:4401/treefam_master',
-        'work_dir'                  => '/hps/nobackup2/production/ensembl/'.$self->o('ENV', 'USER').'/compara/'.$self->o('pipeline_name'),
-        'registry_source'           => $self->o('ENV', 'ENSEMBL_CVS_ROOT_DIR').'/ensembl-compara/scripts/pipeline/',
-        'update_genome_bin'         => $self->o('ENV', 'ENSEMBL_CVS_ROOT_DIR').'/ensembl-compara/scripts/pipeline/update_genome.pl',
-        'collection_all_species'    => 'ensembl_plus_eg',
+        #'master_db_ro'              => 'mysql://ensro\@mysql-ens-compara-prod-4:4401/treefam_master',
+        #'registry_source'           => $self->o('ensembl_cvs_root_dir').'/ensembl-compara/scripts/pipeline/',
+        #'update_genome_bin'         => $self->o('ensembl_cvs_root_dir').'/ensembl-compara/scripts/pipeline/update_genome.pl',
     };
 }
 
@@ -96,29 +94,13 @@ sub resource_classes {
 }
 
 
-
-sub pipeline_checks_pre_init {
-    my ($self) = @_;
-
-    # Without a master database, we must provide other parameters
-    die if not $self->o('master_db_ro') and not $self->o('ncbi_db');
-}
-
-
-sub pipeline_create_commands {
-    my ($self) = @_;
-    return [
-        @{$self->SUPER::pipeline_create_commands},  # here we inherit creation of database, hive tables and compara tables
-        'mkdir -p '.$self->o('work_dir'),
-    ];
-}
-
-
 sub pipeline_wide_parameters {  
 # these parameter values are visible to all analyses, can be overridden by parameters{} and input_id{}
     my ($self) = @_;
     return {
         %{$self->SUPER::pipeline_wide_parameters},          # here we inherit anything from the base class
+
+        'ensembl_release'   => $self->o('ensembl_release'),
     };
 }
 
@@ -130,14 +112,20 @@ sub pipeline_analyses {
 
         {   -logic_name => 'START',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::AssertMatchingVersions',
-            -input_ids  => [ { } ],
+            -parameters => {
+                'db_conn'    => $self->o('master_db'),
+            },
+            -input_ids  => [ {
+                    'production_db_url' => 'mysql://anonymous@ensembldb.ensembl.org:3306/ensembl_production_92',
+                } ],
             -flow_into      => [ 'get_species_list' ],
         },
 
         {   -logic_name => 'get_species_list',
-            -module     => 'Bio::EnsEMBL::Compara::RunnableDB::GetSpeciesList',
-            -parameters        => {
-                'divisions'    => [qw(Ensembl EnsemblPlants EnsemblFungi EnsemblProtists wormbase_parasite )],
+            -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
+            -parameters => {
+                'db_conn'       => '#production_db_url#',
+                'inputquery'    => 'SELECT production_name AS species_name FROM db JOIN species USING (species_id) WHERE db_release=#ensembl_release# AND db_type="core"',
             },
             -flow_into => {
                 '2->A' => [ 'update_species_in_master'  ],
@@ -148,8 +136,8 @@ sub pipeline_analyses {
         {   -logic_name => 'update_species_in_master',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::RunUpdateGenome',
             -parameters => {
-                'update_genome_bin'         => $self->o('update_genome_bin'),
-                'registry_source'           => $self->o('registry_source'),
+                'compara_db'    => $self->o('master_db'),
+                'registry_conf' => $self->o('registry_conf'),
             },
             -hive_capacity => 10,
             -flow_into => {
@@ -161,9 +149,9 @@ sub pipeline_analyses {
         {   -logic_name => 'create_collection',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::CreateCollection',
             -parameters => {
-                'registry_source'           => $self->o('registry_source'),
-                'collection_name'           => $self->o('new_collection_name'),
-                'master_db_ro'              => $self->o('master_db_ro'),
+                #'registry_source'           => $self->o('registry_source'),
+                #'collection_name'           => $self->o('new_collection_name'),
+                'master_db'                 => $self->o('master_db'),
             },
             -hive_capacity => 30,
             -flow_into  => [ 'backbone_pipeline_finished' ],

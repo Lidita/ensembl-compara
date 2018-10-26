@@ -103,19 +103,18 @@ sub compare_dnafrags {
         : $species_dba->get_SliceAdaptor->fetch_all('toplevel', undef, 1, 1, 1);
     die 'Could not fetch any toplevel slices from '.$genome_db->name() unless(scalar(@$gdb_slices));
 
-    my $new_dnafrags = 0;
-    my $different_dnafrags = 0;
+    my @diff_dnafrags;
     foreach my $slice (@$gdb_slices) {
         next if $only_reference && !$slice->is_reference;
         if (my $old_df = delete $old_dnafrags_by_name->{$slice->seq_region_name}) {
             my $new_dnafrag = Bio::EnsEMBL::Compara::DnaFrag->new_from_Slice($slice, $genome_db);
-            $different_dnafrags++ if $old_df->_check_equals($new_dnafrag);
+            push @diff_dnafrags, $new_dnafrag->name if $old_df->_check_equals($new_dnafrag);
         } else {
-            $new_dnafrags++;
+            push @diff_dnafrags, $slice->seq_region_name;
         }
     }
 
-    return ($new_dnafrags + $different_dnafrags + scalar(keys %$old_dnafrags_by_name));
+    return [@diff_dnafrags, keys %$old_dnafrags_by_name];
 }
 
 
